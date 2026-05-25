@@ -1,0 +1,35 @@
+# Cache files
+lora_hashes.json
+
+# User config (contains API key)
+config.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Downloads / generated model files
+*.download
+*.tmp
+*.safetensors
+*.ckpt
+*.pt
+*.bin
+*.pth
+*.onnx
+*.civitai.json
+*.examples.json
+*.examples/
+*.preview.png
+*.preview.jpg
+*.preview.jpeg
+*.preview.webp
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
