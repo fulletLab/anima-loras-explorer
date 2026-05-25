@@ -211,10 +211,15 @@ export async function openExplorer(onSelect, promptController = null) {
     let remoteLoras = [];
     let remoteSeen = new Set();
     let remoteCursor = "";
+    let pendingRemoteItems = [];
+    let pendingRemoteCursor = "";
     let remoteLoading = false;
     let remoteRenderToken = 0;
     let remoteFailureCount = 0;
     let remoteRetryTimer = null;
+    let lastRemoteScrollLoadAt = 0;
+    let remoteSearchEpoch = 0;
+    let pendingRemoteReload = false;
     let apiStatus = { has_key: false, masked: "" };
     let searchTimer = null;
     let promptSyncTimer = null;
@@ -496,31 +501,38 @@ export async function openExplorer(onSelect, promptController = null) {
         loadMoreBtn.style.display = "none";
     }
 
+    function isNearRemoteBottom(threshold = 180) {
+        if (!bodyEl) return false;
+        const distanceToBottom = bodyEl.scrollHeight - (bodyEl.scrollTop + bodyEl.clientHeight);
+        return distanceToBottom <= threshold;
+    }
+
+    function flushPendingRemote() {
+        if (!pendingRemoteItems.length) return false;
+        const added = mergeUniqueRemote(remoteLoras, pendingRemoteItems, remoteSeen);
+        remoteCursor = pendingRemoteCursor || remoteCursor;
+        pendingRemoteItems = [];
+        pendingRemoteCursor = "";
+        appendRemoteCards(added);
+        updateRemoteCount();
+        return true;
+    }
+
     function appendRemoteCards(items = []) {
         if (!items.length) {
             updateRemoteCount(remoteLoading ? " - loading..." : "");
             return;
         }
         remoteRenderToken += 1;
-        const renderToken = remoteRenderToken;
-        const pageSize = 4;
-        const renderChunk = (start = 0) => {
-            if (renderToken !== remoteRenderToken) return;
-            const frag = document.createDocumentFragment();
-            const end = Math.min(start + pageSize, items.length);
-            for (let i = start; i < end; i += 1) {
-                frag.appendChild(createRemoteCard(items[i], {
-                    onOpenInfo: openRemoteInfo,
-                    onDownload: downloadRemote,
-                }));
-            }
-            grid.appendChild(frag);
-            updateRemoteCount(remoteLoading ? " - loading..." : "");
-            if (end < items.length) {
-                requestAnimationFrame(() => renderChunk(end));
-            }
-        };
-        renderChunk();
+        const frag = document.createDocumentFragment();
+        for (const item of items) {
+            frag.appendChild(createRemoteCard(item, {
+                onOpenInfo: openRemoteInfo,
+                onDownload: downloadRemote,
+            }));
+        }
+        grid.appendChild(frag);
+        updateRemoteCount(remoteLoading ? " - loading..." : "");
     }
 
     function renderRemote() {
@@ -550,17 +562,26 @@ export async function openExplorer(onSelect, promptController = null) {
         if (activeTab === "local") renderLocal();
     }
 
-    async function loadRemote(append = false) {
-        if (!remoteEnabled || remoteLoading) return;
+    async function loadRemote(append = false, epoch = remoteSearchEpoch) {
+        if (append && pendingRemoteItems.length && isNearRemoteBottom(400)) {
+            flushPendingRemote();
+            return;
+        }
+        if (!remoteEnabled) return;
+        if (remoteLoading) {
+            if (!append) pendingRemoteReload = true;
+            return;
+        }
         remoteLoading = true;
         let loadedOk = false;
-        const previousScrollTop = bodyEl?.scrollTop || 0;
         const previousText = loadMoreBtn.textContent;
         loadMoreBtn.textContent = "Loading...";
         if (!append) {
             remoteCursor = "";
             remoteLoras = [];
             remoteSeen = new Set();
+            pendingRemoteItems = [];
+            pendingRemoteCursor = "";
             remoteFailureCount = 0;
             grid.innerHTML = `<div class="lora-empty"><div class="lora-spinner"></div><span>Searching Civitai...</span></div>`;
         }
@@ -570,35 +591,34 @@ export async function openExplorer(onSelect, promptController = null) {
                 cursor: append ? remoteCursor : "",
                 limit: 12,
             });
+            if (epoch !== remoteSearchEpoch) return;
             loadedOk = true;
             remoteFailureCount = 0;
             if (!append) grid.innerHTML = "";
-            const added = mergeUniqueRemote(remoteLoras, data.items || [], remoteSeen);
+            const items = data.items || [];
+            if (append && !isNearRemoteBottom(260)) {
+                pendingRemoteItems = pendingRemoteItems.concat(items);
+                pendingRemoteCursor = data.next_cursor || "";
+                count.textContent = `${remoteLoras.length} Civitai results - ${pendingRemoteItems.length} more ready`;
+                loadedOk = false;
+                return;
+            }
+            const added = mergeUniqueRemote(remoteLoras, items, remoteSeen);
             remoteCursor = data.next_cursor || "";
             if (!remoteLoras.length) {
                 renderRemote();
             } else if (append) {
                 appendRemoteCards(added);
-                if (bodyEl) bodyEl.scrollTop = previousScrollTop;
             } else {
                 appendRemoteCards(remoteLoras);
                 if (bodyEl) bodyEl.scrollTop = 0;
             }
         } catch (err) {
+            if (epoch !== remoteSearchEpoch) return;
             remoteFailureCount += 1;
             const message = `Remote search failed: ${err.message}`;
             if (append && remoteLoras.length) {
-                if (bodyEl) bodyEl.scrollTop = previousScrollTop;
                 count.textContent = `${remoteLoras.length} Civitai results - ${message}`;
-                if (remoteFailureCount <= 2 && remoteCursor) {
-                    clearTimeout(remoteRetryTimer);
-                    remoteRetryTimer = setTimeout(() => {
-                        remoteRetryTimer = null;
-                        if (activeTab === "remote" && remoteEnabled && remoteCursor && !remoteLoading) {
-                            loadRemote(true);
-                        }
-                    }, 1200 * remoteFailureCount);
-                }
             } else {
                 grid.innerHTML = `<div class="lora-empty"><span>${escapeHtml(message)}</span></div>`;
                 count.textContent = "search failed";
@@ -607,12 +627,10 @@ export async function openExplorer(onSelect, promptController = null) {
             remoteLoading = false;
             loadMoreBtn.textContent = previousText || "Load More";
             if (loadedOk) updateRemoteCount();
-            requestAnimationFrame(() => {
-                if (loadedOk && activeTab === "remote") {
-                    const distanceToBottom = bodyEl.scrollHeight - (bodyEl.scrollTop + bodyEl.clientHeight);
-                    if (remoteCursor && distanceToBottom < 240) loadRemote(true);
-                }
-            });
+            if (pendingRemoteReload && activeTab === "remote" && remoteEnabled) {
+                pendingRemoteReload = false;
+                loadRemote(false, remoteSearchEpoch);
+            }
         }
     }
 
@@ -947,7 +965,10 @@ export async function openExplorer(onSelect, promptController = null) {
             renderLocal();
             return;
         }
-        searchTimer = setTimeout(() => loadRemote(false), 420);
+        remoteSearchEpoch += 1;
+        pendingRemoteItems = [];
+        pendingRemoteCursor = "";
+        searchTimer = setTimeout(() => loadRemote(false, remoteSearchEpoch), 420);
     });
 
     fetchAllBtn.addEventListener("click", async () => {
@@ -955,13 +976,18 @@ export async function openExplorer(onSelect, promptController = null) {
         await loadLocal(false);
     });
 
-    loadMoreBtn.addEventListener("click", () => loadRemote(true));
+    loadMoreBtn.addEventListener("click", () => {
+        if (!flushPendingRemote()) loadRemote(true, remoteSearchEpoch);
+    });
 
     const remoteScrollHandler = () => {
-        if (activeTab !== "remote" || !remoteEnabled || remoteLoading || !remoteCursor) return;
-        const distanceToBottom = bodyEl.scrollHeight - (bodyEl.scrollTop + bodyEl.clientHeight);
-        if (distanceToBottom < 900) {
-            loadRemote(true);
+        if (activeTab !== "remote" || !remoteEnabled || remoteLoading || (!remoteCursor && !pendingRemoteItems.length)) return;
+        const now = Date.now();
+        if (now - lastRemoteScrollLoadAt < 900) return;
+        if (isNearRemoteBottom(180)) {
+            lastRemoteScrollLoadAt = now;
+            if (flushPendingRemote()) return;
+            loadRemote(true, remoteSearchEpoch);
         }
     };
     bodyEl?.addEventListener("scroll", remoteScrollHandler, { passive: true });
