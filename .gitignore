@@ -34,6 +34,10 @@ pnpm-debug.log*
 *.bak
 *.log
 
+# Publish / release artifacts
+node.zip
+*.zip
+
 # Model files
 *.safetensors
 *.ckpt

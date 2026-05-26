@@ -2,7 +2,7 @@
 
 A ComfyUI LoRA loader with a visual explorer, local LoRA management, Civitai Anima search, prompt trigger tools, download progress, reference examples, and version update checks.
 
-Current version: `1.0.0`
+Current version: `1.0.1`
 
 ---
 
@@ -16,7 +16,7 @@ Search for `Anima LoRA Explorer` in ComfyUI Manager after the package is publish
 
 ```bash
 cd ComfyUI/custom_nodes
-git clone https://github.com/fulletlab/loras-explores.git
+git clone https://github.com/fulletLab/anima-loras-explorer.git
 ```
 
 Restart ComfyUI after installation.
