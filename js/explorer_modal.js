@@ -18,6 +18,7 @@ import { fetchAllPreviews } from "./batch_fetch.js";
 
 let currentOverlay = null;
 let onSelectCallback = null;
+const REMOTE_PAGE_LIMIT = 48;
 
 function escapeHtml(value = "") {
     return String(value ?? "")
@@ -217,6 +218,7 @@ export async function openExplorer(onSelect, promptController = null) {
     let remoteRenderToken = 0;
     let remoteFailureCount = 0;
     let remoteRetryTimer = null;
+    let remoteAutofillTimer = null;
     let lastRemoteScrollLoadAt = 0;
     let remoteSearchEpoch = 0;
     let pendingRemoteReload = false;
@@ -518,6 +520,17 @@ export async function openExplorer(onSelect, promptController = null) {
         return true;
     }
 
+    function scheduleRemoteAutofill() {
+        clearTimeout(remoteAutofillTimer);
+        if (activeTab !== "remote" || !remoteEnabled || remoteLoading || !remoteCursor || pendingRemoteItems.length) return;
+        remoteAutofillTimer = setTimeout(() => {
+            if (activeTab !== "remote" || !remoteEnabled || remoteLoading || !remoteCursor || pendingRemoteItems.length || !bodyEl) return;
+            if (bodyEl.scrollHeight <= bodyEl.clientHeight + 96) {
+                loadRemote(true, remoteSearchEpoch);
+            }
+        }, 120);
+    }
+
     function appendRemoteCards(items = []) {
         if (!items.length) {
             updateRemoteCount(remoteLoading ? " - loading..." : "");
@@ -533,6 +546,7 @@ export async function openExplorer(onSelect, promptController = null) {
         }
         grid.appendChild(frag);
         updateRemoteCount(remoteLoading ? " - loading..." : "");
+        scheduleRemoteAutofill();
     }
 
     function renderRemote() {
@@ -589,7 +603,7 @@ export async function openExplorer(onSelect, promptController = null) {
             const data = await searchCivitaiLoras({
                 query: cleanRemoteQuery(search.value),
                 cursor: append ? remoteCursor : "",
-                limit: 12,
+                limit: REMOTE_PAGE_LIMIT,
             });
             if (epoch !== remoteSearchEpoch) return;
             loadedOk = true;
@@ -908,6 +922,7 @@ export async function openExplorer(onSelect, promptController = null) {
     overlay._cleanup = () => {
         clearTimeout(searchTimer);
         clearTimeout(remoteRetryTimer);
+        clearTimeout(remoteAutofillTimer);
     };
 
     closeBtn.onclick = closeExplorer;

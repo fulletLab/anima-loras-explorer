@@ -1,23 +1,50 @@
-# Cache files
-lora_hashes.json
-
-# User config (contains API key)
+# User secrets / local configuration
 config.json
+config.local.json
+.env
+.env.*
+*.key
+*.token
+
+# Local caches
+lora_hashes.json
+.cache/
 
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-# Downloads / generated model files
+# JavaScript tooling, if used locally
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Downloads / temporary files
 *.download
+*.part
 *.tmp
+*.temp
+*.bak
+*.log
+
+# Model files
 *.safetensors
 *.ckpt
 *.pt
-*.bin
 *.pth
+*.bin
 *.onnx
+*.gguf
+*.sft
+
+# Generated Civitai metadata and previews
 *.civitai.json
 *.examples.json
 *.examples/
@@ -33,3 +60,4 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini

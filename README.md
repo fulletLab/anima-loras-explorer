@@ -1,118 +1,207 @@
-# 🔍 LoRA Explorer for ComfyUI
+# Anima LoRA Explorer for ComfyUI
 
-A custom node that combines **LoRA model loading** with a **visual explorer** — preview what a LoRA looks like before committing to a generation.
+A ComfyUI LoRA loader with a visual explorer, local LoRA management, Civitai Anima search, prompt trigger tools, download progress, reference examples, and version update checks.
 
-![ComfyUI](https://img.shields.io/badge/ComfyUI-Custom_Node-blue)
-![License](https://img.shields.io/badge/License-MIT-green)
-
----
-
-## ✨ Features
-
-| Feature | Description |
-|---|---|
-| **LoRA Loading** | Drop-in replacement for the standard LoRA loader (MODEL + CLIP) |
-| **Visual Preview** | Shows a large preview image directly in the node |
-| **Metadata Display** | Extracts and shows safetensors metadata (base model, network dim, trigger words, etc.) |
-| **CivitAI Integration** | Optionally fetches preview images and metadata from CivitAI API |
-| **Smart Caching** | SHA256 hashes and CivitAI data are cached locally to avoid redundant work |
+Current version: `1.0.0`
 
 ---
 
-## 📦 Installation
+## Installation
 
-### Option 1: ComfyUI Manager
-Search for **"LoRA Explorer"** in the ComfyUI Manager and install.
+### ComfyUI Manager
 
-### Option 2: Manual
+Search for `Anima LoRA Explorer` in ComfyUI Manager after the package is published to the ComfyUI Registry.
+
+### Manual Install
+
 ```bash
 cd ComfyUI/custom_nodes
-git clone https://github.com/YOUR_USERNAME/loras-explores.git
+git clone https://github.com/fulletlab/loras-explores.git
 ```
 
 Restart ComfyUI after installation.
 
----
+The node appears as:
 
-## 🚀 Usage
-
-1. Add the node: **Add Node → loaders → lora explorer → 🔍 LoRA Explorer**
-2. Connect `MODEL` and `CLIP` inputs (same as standard LoRA loader)
-3. Select a LoRA from the dropdown
-4. Run the workflow — the preview image and metadata will appear in the node
-
-### Preview Images
-
-The node looks for **sidecar preview images** next to your LoRA files:
-
-```
-models/loras/
-├── my_cool_lora.safetensors
-├── my_cool_lora.preview.png    ← This will be shown!
-└── my_cool_lora.civitai.json   ← Cached CivitAI metadata
-```
-
-Supported naming conventions (checked in order):
-- `name.preview.png`
-- `name.png`
-- `name.preview.jpg`
-- `name.jpg`
-
----
-
-## 🌐 CivitAI Integration (Optional)
-
-If you don't have preview images locally, the node can download them from CivitAI automatically.
-
-### Setup
-
-1. Get your API key from [CivitAI Account Settings](https://civitai.com/user/account)
-2. Edit `config.json` in the node directory:
-
-```json
-{
-    "civitai_api_key": "your_api_key_here"
-}
-```
-
-3. Enable **"fetch_civitai"** in the node widget
-4. Run — the node will:
-   - Calculate the SHA256 hash of the LoRA
-   - Query CivitAI for model info
-   - Download the preview image as a sidecar file
-   - Save metadata as a `.civitai.json` sidecar
-
-> **🔒 Security Note:** The API key is stored in `config.json` and **never** exposed in workflows. Safe for public sharing.
-
----
-
-## 📁 Project Structure
-
-```
-loras-explores/
-├── __init__.py            # Package init + WEB_DIRECTORY
-├── lora_explorer_node.py  # Node class (thin orchestrator)
-├── metadata_utils.py      # Safetensors header parsing
-├── preview_utils.py       # Preview image discovery & serving
-├── hash_utils.py          # SHA256 calculation + caching
-├── civitai_api.py         # CivitAI API client
-├── config.json            # User configuration (API key)
-├── js/
-│   └── lora_explorer.js   # Frontend preview widget
-└── README.md
+```text
+LoRA Explorer
 ```
 
 ---
 
-## 🛠️ Configuration
+## Node Usage
 
-| Option | Location | Description |
-|---|---|---|
-| `civitai_api_key` | `config.json` | Your CivitAI API token (optional) |
-| `fetch_civitai` | Node widget | Enable/disable CivitAI fetching per execution |
+1. Add the node from `loaders/lora explorer`.
+2. Connect `MODEL` and `CLIP`.
+3. Choose a LoRA from the `lora_name` dropdown.
+4. Adjust model and CLIP strengths.
+5. Run the workflow.
+
+The loader applies the selected LoRA to both MODEL and CLIP, similar to the default ComfyUI LoRA loader.
 
 ---
 
-## 📝 License
+## Explorer Features
 
-MIT License — free to use, modify, and distribute.
+### My LoRAs
+
+Browse installed LoRAs from ComfyUI's LoRA folders. The list merges ComfyUI's indexed names with direct filesystem scanning, so newly downloaded LoRAs can appear before a ComfyUI restart.
+
+Sort local LoRAs by:
+
+- most recent
+- A to Z
+- Z to A
+- heaviest
+- lightest
+
+### Search Civitai
+
+Search remote Anima LoRAs through the backend proxy using:
+
+```text
+https://civitai.red/api/v1/models
+```
+
+The search uses:
+
+- `types=LORA`
+- `baseModels=Anima`
+- `sortBy=models_v9`
+- cursor pagination
+
+Remote search is behind an English internet opt-in gate. No remote request is made until the user enables it.
+
+### Civitai API Key
+
+Search and info can work without an API key. Downloads require a saved Civitai API key.
+
+The key is entered from the Explorer UI and stored locally in:
+
+```text
+config.json
+```
+
+The key is not stored in workflows and should not be committed to Git.
+
+### Downloads
+
+Remote downloads save LoRAs under the first ComfyUI LoRA root:
+
+```text
+models/loras/Civitai/Anima/
+```
+
+Downloads include:
+
+- the selected SafeTensor LoRA
+- `.civitai.json` sidecar metadata
+- preview sidecar image
+- downloaded reference examples when available
+- `.examples.json` with prompt and metadata from Civitai image examples
+
+Download progress shows MB, percent when available, and current phase.
+
+### Reference Examples
+
+`Open Info` shows LoRA reference images as thumbnails. Example cards can include:
+
+- image preview
+- positive prompt
+- negative prompt
+- generation metadata when Civitai provides it
+- copy prompt actions
+
+Video-first Civitai entries are skipped automatically until a valid `png`, `jpg`, `jpeg`, or `webp` image is found.
+
+### Prompt Trigger Tools
+
+LoRA Explorer never inserts `@lora`. It uses Civitai trained words.
+
+Info actions include:
+
+- `Copy`
+- `Add to Prompt`
+- `Replace Triggers`
+- `Use LoRA`
+- `Download & Use`
+
+`Add to Prompt` appends trigger words. `Replace Triggers` replaces only the last trigger group inserted by LoRA Explorer; otherwise it appends.
+
+### Prompt Preview
+
+The Explorer includes an editable prompt preview connected to the active positive prompt text widget, so trigger actions are visible immediately.
+
+### Local Metadata
+
+For installed LoRAs, `Open Info` can show:
+
+- filename
+- size
+- base model
+- trigger words
+- sidecar metadata
+- downloaded examples
+- Civitai link when known
+
+`Fetch Metadata` downloads Civitai metadata, previews, and examples for local LoRAs when possible.
+
+### Version Updates
+
+If a local LoRA has Civitai sidecar metadata, the Explorer can compare the installed version with available Civitai model versions.
+
+When a newer downloadable SafeTensor version exists, the UI shows an update action. New versions download beside the old file instead of deleting it.
+
+---
+
+## Sidecar Files
+
+Example local layout:
+
+```text
+models/loras/Civitai/Anima/
+├── example_lora.safetensors
+├── example_lora.preview.png
+├── example_lora.civitai.json
+├── example_lora.examples.json
+└── example_lora.examples/
+    ├── example_001.jpg
+    └── example_002.jpg
+```
+
+---
+
+## Registry Metadata
+
+This package includes `pyproject.toml` for ComfyUI Registry publishing:
+
+```toml
+[tool.comfy]
+PublisherId = "fulletlab"
+DisplayName = "Anima LoRA Explorer"
+```
+
+Publish with:
+
+```bash
+comfy node publish
+```
+
+---
+
+## Git Safety
+
+Do not commit:
+
+- `config.json`
+- `lora_hashes.json`
+- `__pycache__/`
+- `*.pyc`
+- `*.download`
+- downloaded model files
+
+---
+
+## License
+
+MIT License.

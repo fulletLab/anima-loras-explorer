@@ -1,0 +1,14 @@
+[project]
+name = "comfyui-anima-lora-explorer"
+description = "A ComfyUI LoRA loader and explorer for Anima models with local LoRA browsing, Civitai Anima search, trigger tools, download progress, reference examples, and version update checks."
+version = "1.0.0"
+license = {text = "MIT License"}
+dependencies = ["aiohttp"]
+authors = [{ name = "fulletlab" }]
+
+[project.urls]
+Repository = "https://github.com/fulletlab/loras-explores"
+
+[tool.comfy]
+PublisherId = "fulletlab"
+DisplayName = "Anima LoRA Explorer"

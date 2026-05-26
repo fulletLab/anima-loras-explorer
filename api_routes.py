@@ -181,6 +181,62 @@ def _clean_remote_query(value: str) -> str:
     return clean.strip()
 
 
+def _remote_model_key(model: dict) -> str:
+    return str(model.get("id") or model.get("modelId") or model.get("name") or "").strip().lower()
+
+
+def _remote_model_search_blob(model: dict) -> str:
+    parts = [
+        model.get("name", ""),
+        model.get("description", ""),
+        model.get("type", ""),
+    ]
+    creator = model.get("creator") if isinstance(model.get("creator"), dict) else {}
+    parts.append(creator.get("username", ""))
+    tags = model.get("tags") if isinstance(model.get("tags"), list) else []
+    parts.extend(str(tag) for tag in tags)
+    versions = model.get("modelVersions") if isinstance(model.get("modelVersions"), list) else []
+    for version in versions:
+        parts.extend([
+            version.get("name", ""),
+            version.get("baseModel", ""),
+        ])
+        words = version.get("trainedWords") if isinstance(version.get("trainedWords"), list) else []
+        parts.extend(str(word) for word in words)
+        files = version.get("files") if isinstance(version.get("files"), list) else []
+        for file_info in files:
+            if isinstance(file_info, dict):
+                parts.append(file_info.get("name", ""))
+    return _clean_remote_query(" ".join(str(part or "") for part in parts)).lower()
+
+
+def _remote_model_matches_query(model: dict, query: str) -> bool:
+    clean = _clean_remote_query(query).lower()
+    if not clean:
+        return True
+    blob = _remote_model_search_blob(model)
+    if clean in blob:
+        return True
+    tokens = [token for token in clean.split(" ") if token]
+    return bool(tokens) and all(token in blob for token in tokens)
+
+
+def _merge_remote_models(target: list[dict], incoming: list[dict], seen: set[str], query: str = "") -> int:
+    added = 0
+    for item in incoming or []:
+        if not isinstance(item, dict):
+            continue
+        if query and not _remote_model_matches_query(item, query):
+            continue
+        key = _remote_model_key(item)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        target.append(item)
+        added += 1
+    return added
+
+
 def _safe_filename(value: str, fallback: str = "civitai_lora") -> str:
     name = str(value or "").strip() or fallback
     name = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", name)
@@ -634,11 +690,45 @@ async def search_remote_civitai(request):
     if not payload:
         return web.json_response({"items": [], "next_cursor": "", "error": "Could not fetch Civitai results"}, status=502)
 
-    items = [_normalize_civitai_model(item) for item in payload.get("items", []) if isinstance(item, dict)]
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    raw_items: list[dict] = []
+    seen: set[str] = set()
+    _merge_remote_models(raw_items, payload.get("items", []), seen, query=query)
+
+    # Civitai search can return sparse pages for short/partial queries. Walk a few
+    # cursors so searches like "turbo" do not look empty when matches are nearby.
+    next_cursor = _extract_next_cursor(metadata)
+    if query and next_cursor and len(raw_items) < limit:
+        for _ in range(5):
+            extra = search_civitai_loras(query=query, cursor=next_cursor, limit=limit)
+            if not extra:
+                break
+            extra_metadata = extra.get("metadata") if isinstance(extra.get("metadata"), dict) else {}
+            _merge_remote_models(raw_items, extra.get("items", []), seen, query=query)
+            metadata = extra_metadata or metadata
+            next_cursor = _extract_next_cursor(extra_metadata)
+            if len(raw_items) >= limit or not next_cursor:
+                break
+
+    # The public query endpoint sometimes misses visible model names from the
+    # default Anima listing. Add a lightweight local-match fallback from the top
+    # sorted pages, without changing the normal Civitai query cursor.
+    if query and len(raw_items) < limit:
+        fallback_cursor = ""
+        for _ in range(3):
+            fallback = search_civitai_loras(query="", cursor=fallback_cursor, limit=100)
+            if not fallback:
+                break
+            fallback_metadata = fallback.get("metadata") if isinstance(fallback.get("metadata"), dict) else {}
+            _merge_remote_models(raw_items, fallback.get("items", []), seen, query=query)
+            fallback_cursor = _extract_next_cursor(fallback_metadata)
+            if len(raw_items) >= limit or not fallback_cursor:
+                break
+
+    items = [_normalize_civitai_model(item) for item in raw_items[:limit] if isinstance(item, dict)]
     return web.json_response({
         "items": items,
-        "next_cursor": _extract_next_cursor(metadata),
+        "next_cursor": next_cursor,
         "next_page": metadata.get("nextPage", ""),
         "metadata": metadata,
     })
